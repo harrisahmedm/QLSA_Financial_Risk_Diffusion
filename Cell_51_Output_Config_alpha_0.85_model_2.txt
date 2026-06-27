@@ -1,0 +1,46 @@
+======================================================================
+Notebook B : Executable Boolean-Basis R_HHL
+======================================================================
+
+Phase qubits                  : 14
+
+Rotation ancilla              : 1
+
+Coefficient threshold         : 1.0e-12
+
+Applied rotations             : 16316
+
+Largest control count         : 14
+
+Largest |coefficient|         : 1.5248081461
+
+Largest rotation angle (rad)  : 3.0496162922
+
+Rotations by monomial degree:
+
+Degree  0 : 1
+Degree  1 : 14
+Degree  2 : 91
+Degree  3 : 364
+Degree  4 : 1001
+Degree  5 : 2000
+Degree  6 : 2994
+Degree  7 : 3415
+Degree  8 : 2985
+Degree  9 : 1988
+Degree 10 : 993
+Degree 11 : 364
+Degree 12 : 91
+Degree 13 : 14
+Degree 14 : 1
+
+Exported objects:
+
+  BOOLEAN_R_HHL_CIRCUIT
+  BOOLEAN_R_HHL_GATE
+  BOOLEAN_R_HHL_RESOURCE_ESTIMATE
+
+======================================================================
+
+Symbolic architecture:
+
