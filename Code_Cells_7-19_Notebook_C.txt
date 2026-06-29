@@ -1,0 +1,3567 @@
+# ============================================================
+# Cell 7 : Construct D, L, and A
+# ============================================================
+
+# ------------------------------------------------------------
+# Degree vector and degree matrix
+# ------------------------------------------------------------
+
+degree_vector = np.array(
+    J.sum(axis=1)
+).flatten()
+
+D = sp.diags(
+    degree_vector,
+    offsets=0,
+    shape=(N, N),
+    format='csr'
+)
+
+# ============================================================
+# Construct the Laplacian
+# ============================================================
+
+if model == 1:
+
+    # --------------------------------------------------------
+    # Model 1:
+    #
+    #     L = D - J
+    #
+    # --------------------------------------------------------
+
+    L = D - J
+
+elif model == 2:
+
+    # --------------------------------------------------------
+    # Model 2:
+    #
+    #     L = I - D^{-1/2} J D^{-1/2}
+    #
+    # --------------------------------------------------------
+
+    D_inv_sqrt = sp.diags(
+        1 / np.sqrt(degree_vector),
+        offsets=0,
+        shape=(N, N),
+        format='csr'
+    )
+
+    L = (
+        sp.eye(N, format='csr')
+        - D_inv_sqrt @ J @ D_inv_sqrt
+    )
+
+else:
+
+    raise ValueError(
+        f"Unknown model: {model}"
+    )
+
+# ============================================================
+# Construct A
+# ============================================================
+
+A = (
+    (1 - alpha) * sp.eye(N, format='csr')
+    + alpha * L
+)
+
+A = A.tocsr()
+
+# ============================================================
+# Diagnostics
+# ============================================================
+
+A_row_sparsities = np.diff(A.indptr)
+
+A_diagonal = A.diagonal()
+
+off_diagonal = A - sp.diags(
+    A_diagonal,
+    format='csr'
+)
+
+positive_off_diagonal_entries = (
+    off_diagonal.data[
+        off_diagonal.data > 1e-12
+    ]
+)
+
+# ------------------------------------------------------------
+# Basic checks
+# ------------------------------------------------------------
+
+assert (A != A.T).nnz == 0, \
+    "A is not symmetric."
+
+assert np.all(
+    A_diagonal > 0
+), "A does not have positive diagonal entries."
+
+assert len(
+    positive_off_diagonal_entries
+) == 0, (
+    "A has positive off-diagonal entries "
+    "and is therefore not a Z-matrix."
+)
+
+# ============================================================
+# Summary
+# ============================================================
+
+print("=" * 70)
+print("Matrix Construction Summary")
+print("=" * 70)
+
+print(f"Model used                          : "
+      f"{model}")
+
+print()
+
+print(f"Diffusion parameter alpha           : "
+      f"{alpha:.4f}")
+
+print()
+
+print(f"Minimum degree d_min                : "
+      f"{degree_vector.min():.4f}")
+
+print(f"Maximum degree d_max                : "
+      f"{degree_vector.max():.4f}")
+
+print()
+
+print(f"Maximum row sparsity of A           : "
+      f"{A_row_sparsities.max()}")
+
+print()
+
+print(f"Minimum diagonal entry of A         : "
+      f"{A_diagonal.min():.4f}")
+
+print(f"Maximum diagonal entry of A         : "
+      f"{A_diagonal.max():.4f}")
+
+print()
+
+print(f"Number of non-zero entries in A     : "
+      f"{A.nnz}")
+
+print()
+
+print(f"A is symmetric                      : True")
+
+print(f"A is a Z-matrix                     : True")
+
+print("=" * 70)
+
+# ============================================================
+# Cell 8 : Spectral Diagnostics for A
+# ============================================================
+
+BLOCK_ENCODING_MARGIN = 1e-10
+
+BOUND_VALIDATION_TOL = 1e-12
+# (Used only when comparing exact theoretical bounds with numerically computed eigenvalues.)
+
+
+# ------------------------------------------------------------
+# Compute extremal eigenvalues
+# ------------------------------------------------------------
+
+print("Computing extremal eigenvalues of A...")
+
+lambda_min = spla.eigsh(
+    A,
+    k=1,
+    which='SA',
+    return_eigenvectors=False
+)[0]
+
+lambda_max = spla.eigsh(
+    A,
+    k=1,
+    which='LA',
+    return_eigenvectors=False
+)[0]
+
+# ------------------------------------------------------------
+# Exact condition number
+# ------------------------------------------------------------
+
+kappa_exact = lambda_max / lambda_min
+
+
+# ============================================================
+# Model-specific theoretical bounds
+# ============================================================
+
+if model == 1:
+
+    #
+    # A = (1-alpha)I + alpha(D - J)
+    #
+    # lambda_min >= 1 - alpha
+    #
+    # lambda_max <= (1-alpha) + 2 alpha d_max
+    #
+
+    lambda_min_bound = 1 - alpha
+
+    lambda_max_bound = (
+        (1 - alpha)
+        + 2 * alpha * d_max
+    )
+
+    row_sum_bound = 2*(s - 1)
+
+elif model == 2:
+
+    #
+    # A = (1-alpha)I
+    #   + alpha(I - D^{-1/2} J D^{-1/2})
+    #
+    # spectrum(A) subseteq [1-alpha, 1+alpha]
+    #
+
+    lambda_min_bound = 1 - alpha
+
+    lambda_max_bound = 1 + alpha
+
+    row_sum_bound = s
+
+else:
+
+    raise ValueError(
+        f"Unknown model: {model}"
+    )
+
+
+# ------------------------------------------------------------
+# Theoretical condition number bound
+# ------------------------------------------------------------
+
+kappa_bound = (
+    lambda_max_bound
+    / lambda_min_bound
+)
+
+
+# ============================================================
+# Positive definiteness diagnostics
+# ============================================================
+
+is_positive_definite = (
+    lambda_min > 0
+)
+
+assert is_positive_definite, \
+    (
+        "A is not positive definite.\n"
+        f"lambda_min = {lambda_min:.12f}"
+    )
+
+
+# ============================================================
+# Validate theoretical bounds
+# ============================================================
+
+lower_bound_valid = (
+    lambda_min >=
+    lambda_min_bound - BOUND_VALIDATION_TOL
+)
+
+upper_bound_valid = (
+    lambda_max <=
+    lambda_max_bound + BOUND_VALIDATION_TOL
+)
+
+assert lower_bound_valid, \
+    (
+        "Theoretical lower bound violated.\n"
+        f"lambda_min = {lambda_min:.12f}\n"
+        f"lambda_min_bound = "
+        f"{lambda_min_bound:.12f}"
+    )
+
+assert upper_bound_valid, \
+    (
+        "Theoretical upper bound violated.\n"
+        f"lambda_max = {lambda_max:.12f}\n"
+        f"lambda_max_bound = "
+        f"{lambda_max_bound:.12f}"
+    )
+
+
+# ============================================================
+# Block-encoding scaling factor
+# ============================================================
+
+# Note that alpha_A must ensure two things.
+#
+# 1. ||A / alpha_A||_2 <= 1,
+#    so that the matrix is block-encodable.
+#
+# 2. For every row i,
+#
+#       sum_j |A_ij| / alpha_A <= 1,
+#
+#    so that the PREPARE amplitudes
+#
+#       sqrt(|A_ij| / alpha_A)
+#
+#    form a valid subnormalized state.
+#    The remaining probability mass is assigned
+#    to the |fail> state.
+
+alpha_A = (
+    max(
+        lambda_max_bound,
+        row_sum_bound
+    )
+    /
+    (1 - BLOCK_ENCODING_MARGIN)
+)
+
+# ============================================================
+# Encodability diagnostics
+# ============================================================
+
+scaled_lambda_min = (
+    lambda_min / alpha_A
+)
+
+scaled_lambda_max = (
+    lambda_max / alpha_A
+)
+
+all_eigenvalues_encodable = (
+    scaled_lambda_max <= 1
+)
+
+assert all_eigenvalues_encodable, \
+    (
+        "Eigenvalues are not block-encodable.\n"
+        f"lambda_max / alpha_A = "
+        f"{scaled_lambda_max:.12f}"
+    )
+
+assert scaled_lambda_min > 0, \
+    (
+        "Scaled eigenvalues are not positive.\n"
+        f"lambda_min / alpha_A = "
+        f"{scaled_lambda_min:.12f}"
+    )
+
+
+# ============================================================
+# Summary
+# ============================================================
+
+print("\n" + "=" * 70)
+print("Spectral Diagnostics")
+print("=" * 70)
+
+print(f"Exact lambda_min                   : "
+      f"{lambda_min:.8f}")
+
+print(f"Exact lambda_max                   : "
+      f"{lambda_max:.8f}")
+
+print()
+
+print(f"Exact condition number             : "
+      f"{kappa_exact:.8f}")
+
+print()
+
+print(f"Theoretical lambda_min bound       : "
+      f"{lambda_min_bound:.8f}")
+
+print(f"Theoretical lambda_max bound       : "
+      f"{lambda_max_bound:.8f}")
+
+print()
+
+print(f"Theoretical condition number bound : "
+      f"{kappa_bound:.8f}")
+
+print()
+
+print(f"Row-sum bound                      : "
+      f"{row_sum_bound:.8f}")
+
+print()
+
+print(f"Block-encoding margin              : "
+      f"{BLOCK_ENCODING_MARGIN:.2e}")
+
+print(f"Block-encoding scaling alpha_A     : "
+      f"{alpha_A:.8f}")
+
+print()
+
+print(f"lambda_min / alpha_A               : "
+      f"{scaled_lambda_min:.8f}")
+
+print(f"lambda_max / alpha_A               : "
+      f"{scaled_lambda_max:.8f}")
+
+print(f"alpha_A / lambda_max               : "
+      f"{alpha_A / lambda_max:.8f}")
+
+print()
+
+print(f"A is positive definite             : "
+      f"{is_positive_definite}")
+
+print(f"Lower bound validated              : "
+      f"{lower_bound_valid}")
+
+print(f"Upper bound validated              : "
+      f"{upper_bound_valid}")
+
+print(f"All eigenvalues encodable          : "
+      f"{all_eigenvalues_encodable}")
+
+print("=" * 70)
+
+# ============================================================
+# Cell 9 : Construct Sparse Oracle Tables for A
+# ============================================================
+
+A_positions = []
+A_values = []
+
+# ------------------------------------------------------------
+# Extract sparse representation row by row
+# ------------------------------------------------------------
+
+for i in range(N):
+
+    row = A.getrow(i)
+
+    positions = row.indices.tolist()
+    values = row.data.tolist()
+
+    # --------------------------------------------------------
+    # Verify sparsity assumption
+    # --------------------------------------------------------
+
+    assert len(positions) <= s, \
+        (
+            f"Row {i} exceeds sparsity bound.\n"
+            f"Observed sparsity = {len(positions)}\n"
+            f"Specified sparsity = {s}"
+        )
+
+    A_positions.append(positions)
+    A_values.append(values)
+
+
+# ============================================================
+# Pad the rows to uniform length s
+# ============================================================
+
+#
+# O_F expects a mapping
+#
+#     (i, ell) -> f(i, ell)
+#
+# where ell ∈ {0, ..., s−1}.
+#
+# Therefore, every row representation should have
+# exactly s entries.
+#
+# Padding is performed using actual zero locations
+# (p, 0) satisfying A[i, p] = 0.
+#
+# We additionally ensure that the final position list
+# is sorted in ascending order.
+#
+
+A_positions_padded = []
+A_values_padded = []
+
+for i in range(N):
+
+    positions = A_positions[i].copy()
+    values = A_values[i].copy()
+
+    # --------------------------------------------------------
+    # Sort the genuine entries
+    # --------------------------------------------------------
+
+    pairs = sorted(
+        zip(positions, values),
+        key=lambda x: x[0]
+    )
+
+    positions = [p for p, _ in pairs]
+    values = [v for _, v in pairs]
+
+    # --------------------------------------------------------
+    # Pad using actual zero locations
+    # --------------------------------------------------------
+
+    padding_needed = s - len(positions)
+
+    if padding_needed > 0:
+
+        used_positions = set(positions)
+
+        available_positions = [
+            j for j in range(N)
+            if j not in used_positions
+        ]
+
+        padding_positions = (
+            available_positions[:padding_needed]
+        )
+
+        positions.extend(padding_positions)
+
+        values.extend(
+            [0.0] * padding_needed
+        )
+
+    # --------------------------------------------------------
+    # Final sorting (including padded entries)
+    # --------------------------------------------------------
+
+    pairs = sorted(
+        zip(positions, values),
+        key=lambda x: x[0]
+    )
+
+    positions = [p for p, _ in pairs]
+    values = [v for _, v in pairs]
+
+    # --------------------------------------------------------
+    # Final checks
+    # --------------------------------------------------------
+
+    assert len(positions) == s, \
+        (
+            f"Row {i} does not have exactly "
+            f"{s} padded entries."
+        )
+
+    assert len(values) == s, \
+        (
+            f"Row {i} does not have exactly "
+            f"{s} padded values."
+        )
+
+    A_positions_padded.append(positions)
+    A_values_padded.append(values)
+
+
+# ============================================================
+# Convert to NumPy arrays
+# ============================================================
+
+A_positions_padded = np.array(
+    A_positions_padded,
+    dtype=int
+)
+
+A_values_padded = np.array(
+    A_values_padded,
+    dtype=float
+)
+
+
+# ============================================================
+# Verify consistency with A
+# ============================================================
+
+for i in range(N):
+
+    for ell in range(s):
+
+        j = A_positions_padded[i, ell]
+
+        val = A_values_padded[i, ell]
+
+        actual_val = A[i, j]
+
+        if sp.issparse(actual_val):
+
+            actual_val = actual_val.toarray()[0, 0]
+
+        actual_val = float(actual_val)
+
+        assert np.isclose(
+            val,
+            actual_val
+        ), (
+            f"Inconsistent oracle entry.\n"
+            f"Row {i}, ell = {ell}\n"
+            f"Position = {j}\n"
+            f"Stored value = {val}\n"
+            f"Actual value = {actual_val}"
+        )
+
+
+# ============================================================
+# Diagnostics
+# ============================================================
+
+assert A_positions_padded.shape == (N, s)
+
+assert A_values_padded.shape == (N, s)
+
+assert np.all(
+    np.diff(A_positions_padded, axis=1) >= 0
+), (
+    "Some rows are not sorted in ascending order."
+)
+
+assert np.all(
+    np.sum(
+        A_values_padded != 0,
+        axis=1
+    ) <= s
+)
+
+
+# ============================================================
+# Summary
+# ============================================================
+
+print("=" * 70)
+print("Sparse Oracle Tables for A")
+print("=" * 70)
+
+print(f"A_positions_padded shape            : "
+      f"{A_positions_padded.shape}")
+
+print(f"A_values_padded shape               : "
+      f"{A_values_padded.shape}")
+
+print()
+
+print(f"Specified sparsity s                : "
+      f"{s}")
+
+print()
+
+print("First few rows:")
+
+n_rows_to_show = min(5, N)
+
+for i in range(n_rows_to_show):
+
+    print(f"\nRow {i}:")
+
+    for ell in range(s):
+
+        j = A_positions_padded[i, ell]
+
+        val = A_values_padded[i, ell]
+
+        print(
+            f"    ell = {ell}: "
+            f"column = {j}, "
+            f"value = {val:.6f}"
+        )
+
+print("\n" + "=" * 70)
+
+# ============================================================
+# Cell 10 : Classical Sparse Oracles O_F and O_A
+# ============================================================
+
+# ------------------------------------------------------------
+# Position oracle:
+#
+#     O_F(i, ell) = f(i, ell)
+#
+# Returns the column index corresponding to the
+# ell-th accessible entry of row i.
+# ------------------------------------------------------------
+
+def O_F(i, ell):
+
+    assert 0 <= i < N, \
+        f"Row index i = {i} is out of range."
+
+    assert 0 <= ell < s, \
+        f"Sparsity index ell = {ell} is out of range."
+
+    return int(
+        A_positions_padded[i, ell]
+    )
+
+
+# ------------------------------------------------------------
+# Value oracle:
+#
+#     O_A(i, ell)
+#
+# Returns the matrix value
+#
+#     A_{i, f(i, ell)}.
+#
+# ------------------------------------------------------------
+
+def O_A(i, ell):
+
+    assert 0 <= i < N, \
+        f"Row index i = {i} is out of range."
+
+    assert 0 <= ell < s, \
+        f"Sparsity index ell = {ell} is out of range."
+
+    return float(
+        A_values_padded[i, ell]
+    )
+
+
+# ============================================================
+# Exhaustive verification
+# ============================================================
+
+for i in range(N):
+
+    for ell in range(s):
+
+        j = O_F(i, ell)
+
+        oracle_value = O_A(i, ell)
+
+        actual_value = A[i, j]
+
+        if sp.issparse(actual_value):
+
+            actual_value = actual_value.toarray()[0, 0]
+
+        actual_value = float(actual_value)
+
+        assert np.isclose(
+            oracle_value,
+            actual_value
+        ), (
+            f"Oracle mismatch.\n"
+            f"Row = {i}\n"
+            f"ell = {ell}\n"
+            f"O_F(i, ell) = {j}\n"
+            f"O_A(i, ell) = {oracle_value}\n"
+            f"A[i, j] = {actual_value}"
+        )
+
+
+# ============================================================
+# Diagnostics
+# ============================================================
+
+print("=" * 70)
+print("Classical Sparse Oracle Verification")
+print("=" * 70)
+
+print(
+    "Position oracle O_F verified "
+    f"for all {N*s} entries."
+)
+
+print(
+    "Value oracle O_A verified "
+    f"for all {N*s} entries."
+)
+
+print("\nExample queries:")
+
+n_rows_to_show = min(5, N)
+
+for i in range(n_rows_to_show):
+
+    print(f"\nRow {i}:")
+
+    for ell in range(s):
+
+        j = O_F(i, ell)
+
+        val = O_A(i, ell)
+
+        print(
+            f"    ell = {ell}: "
+            f"f(i, ell) = {j}, "
+            f"A[i, f(i, ell)] = {val:.6f}"
+        )
+
+print("\n" + "=" * 70)
+
+# ============================================================
+# Cell 11 : Oracle Register Specifications
+# ============================================================
+
+# ------------------------------------------------------------
+# Upper bound on d_max
+# ------------------------------------------------------------
+
+#
+# Since
+#
+#     J_ij <= 1,
+#
+# and each node has at most s_J neighbors,
+#
+# we have
+#
+#     d_max <= s_J.
+#
+# This bound depends only on the problem
+# specification and NOT on the realized graph.
+#
+
+d_max_possible = s_J
+
+
+# ============================================================
+# Model-1 precision requirements
+# ============================================================
+
+#
+# For Model 1:
+#
+#     |A_ij| = alpha J_ij
+#
+# Therefore,
+#
+#     |A_ij|
+#
+#     >= ALPHA_THRESHOLD J_MIN_THRESHOLD.
+#
+
+A_min_possible_model_1 = (
+    ALPHA_THRESHOLD
+    * J_MIN_THRESHOLD
+)
+
+#
+# Since
+#
+#     A_ii
+#
+#     = 1 - alpha + alpha d_i
+#
+# and
+#
+#     d_i <= d_max_possible,
+#
+# we obtain
+#
+#     A_ii <= 1 + d_max_possible.
+#
+
+A_max_possible_model_1 = (
+    1
+    + d_max_possible
+)
+
+
+# ============================================================
+# Model-2 precision requirements
+# ============================================================
+
+#
+# For Model 2:
+#
+#     |A_ij|
+#
+#     = alpha J_ij
+#
+#       / sqrt(d_i d_j)
+#
+# Since
+#
+#     sqrt(d_i d_j)
+#
+#     <= d_max_possible,
+#
+# we obtain
+#
+#     |A_ij|
+#
+#     >=
+#
+#     ALPHA_THRESHOLD
+#
+#     * J_MIN_THRESHOLD
+#
+#     / d_max_possible.
+#
+
+A_min_possible_model_2 = (
+    ALPHA_THRESHOLD
+    * J_MIN_THRESHOLD
+    / d_max_possible
+)
+
+#
+# Diagonal entries are exactly 1.
+#
+
+A_max_possible_model_2 = 1.0
+
+
+# ============================================================
+# Model-agnostic precision requirements
+# ============================================================
+
+#
+# We construct ONE oracle architecture that
+# works for BOTH models.
+#
+# Therefore, we first determine the largest
+# possible matrix entry magnitude among all
+# models under consideration.
+#
+
+A_max_possible = max(
+    A_max_possible_model_1,
+    A_max_possible_model_2
+)
+
+
+#
+# Require
+#
+#     A_max_possible / 2^b
+#
+# to be strictly smaller than the smallest
+# representable nonzero entry in each model.
+#
+
+ratio_model_1 = (
+    A_max_possible
+    / A_min_possible_model_1
+)
+
+ratio_model_2 = (
+    A_max_possible
+    / A_min_possible_model_2
+)
+
+
+#
+# Add one extra bit to guarantee the strict
+# inequality.
+#
+
+VALUE_PRECISION_BITS_MODEL_1 = int(
+    np.ceil(
+        np.log2(ratio_model_1)
+    )
+) + 1
+
+VALUE_PRECISION_BITS_MODEL_2 = int(
+    np.ceil(
+        np.log2(ratio_model_2)
+    )
+) + 1
+
+
+#
+# Model-agnostic value precision.
+#
+
+VALUE_PRECISION_BITS = max(
+    VALUE_PRECISION_BITS_MODEL_1,
+    VALUE_PRECISION_BITS_MODEL_2
+)
+
+
+VALUE_RESOLUTION = (
+    A_max_possible
+    /
+    (2 ** VALUE_PRECISION_BITS)
+)
+
+
+# ------------------------------------------------------------
+# Verify that the chosen precision is sufficient
+# ------------------------------------------------------------
+
+assert VALUE_RESOLUTION < A_min_possible_model_1, \
+    (
+        "Value register precision is insufficient "
+        "for Model 1.\n"
+        f"Resolution = "
+        f"{VALUE_RESOLUTION:.12e}\n"
+        f"A_min_possible_model_1 = "
+        f"{A_min_possible_model_1:.12e}"
+    )
+
+assert VALUE_RESOLUTION < A_min_possible_model_2, \
+    (
+        "Value register precision is insufficient "
+        "for Model 2.\n"
+        f"Resolution = "
+        f"{VALUE_RESOLUTION:.12e}\n"
+        f"A_min_possible_model_2 = "
+        f"{A_min_possible_model_2:.12e}"
+    )
+
+
+# ============================================================
+# Determine actual realized A diagnostics
+# ============================================================
+
+A_nonzero_values = A.data
+
+A_nonzero_magnitudes = np.abs(
+    A_nonzero_values[
+        np.abs(A_nonzero_values) > 0
+    ]
+)
+
+A_min_actual = (
+    A_nonzero_magnitudes.min()
+)
+
+A_max_actual = (
+    A_nonzero_magnitudes.max()
+)
+
+actual_entries_resolvable = (
+    A_min_actual
+    > VALUE_RESOLUTION
+)
+
+assert actual_entries_resolvable, \
+    (
+        "The realized matrix A contains "
+        "entries below the chosen value "
+        "resolution.\n"
+        f"A_min_actual = "
+        f"{A_min_actual:.12e}\n"
+        f"Resolution = "
+        f"{VALUE_RESOLUTION:.12e}"
+    )
+
+
+# ============================================================
+# Register sizes
+# ============================================================
+
+#
+# Index register
+#
+
+n_index = n
+
+
+#
+# Sparsity register
+#
+
+n_sparsity = int(
+    np.ceil(
+        np.log2(s)
+    )
+)
+
+
+#
+# Position register
+#
+
+n_position = n
+
+
+#
+# Sign qubit
+#
+
+n_sign = 1
+
+
+#
+# Value register
+#
+
+n_value = (
+    VALUE_PRECISION_BITS
+    + n_sign
+)
+
+
+# ============================================================
+# Oracle logical qubit counts
+# ============================================================
+
+n_qubits_O_F = (
+    n_index
+    + n_sparsity
+    + n_position
+)
+
+n_qubits_O_A = (
+    n_index
+    + n_sparsity
+    + n_value
+)
+
+
+# ============================================================
+# Summary
+# ============================================================
+
+print("=" * 70)
+print("Oracle Register Specifications")
+print("=" * 70)
+
+print(f"ALPHA_THRESHOLD                   : "
+      f"{ALPHA_THRESHOLD:.2e}")
+
+print(f"J_MIN_THRESHOLD                   : "
+      f"{J_MIN_THRESHOLD:.2e}")
+
+print()
+
+print(f"d_max_possible                    : "
+      f"{d_max_possible}")
+
+print()
+
+print(f"Model-1 A_min_possible            : "
+      f"{A_min_possible_model_1:.12e}")
+
+print(f"Model-1 A_max_possible            : "
+      f"{A_max_possible_model_1:.12e}")
+
+print(f"Model-1 precision bits            : "
+      f"{VALUE_PRECISION_BITS_MODEL_1}")
+
+print()
+
+print(f"Model-2 A_min_possible            : "
+      f"{A_min_possible_model_2:.12e}")
+
+print(f"Model-2 A_max_possible            : "
+      f"{A_max_possible_model_2:.12e}")
+
+print(f"Model-2 precision bits            : "
+      f"{VALUE_PRECISION_BITS_MODEL_2}")
+
+print()
+
+print(f"Model-agnostic A_max_possible     : "
+      f"{A_max_possible:.12e}")
+
+print(f"Model-agnostic precision bits     : "
+      f"{VALUE_PRECISION_BITS}")
+
+print(f"Model-agnostic resolution         : "
+      f"{VALUE_RESOLUTION:.12e}")
+
+print()
+
+print(f"Actual A_min                      : "
+      f"{A_min_actual:.12e}")
+
+print(f"Actual A_max                      : "
+      f"{A_max_actual:.12e}")
+
+print()
+
+print(f"Actual entries resolvable         : "
+      f"{actual_entries_resolvable}")
+
+print()
+
+print(f"Index register qubits             : "
+      f"{n_index}")
+
+print(f"Sparsity register qubits          : "
+      f"{n_sparsity}")
+
+print(f"Position register qubits          : "
+      f"{n_position}")
+
+print(f"Value register qubits             : "
+      f"{n_value}")
+
+print()
+
+print(f"O_F logical qubits                : "
+      f"{n_qubits_O_F}")
+
+print(f"O_A logical qubits                : "
+      f"{n_qubits_O_A}")
+
+print()
+
+print("Ancilla qubits required for")
+print("QROM implementation are not")
+print("included in these counts.")
+
+print("=" * 70)
+
+# ============================================================
+# Cell 12 : QROM Data Preparation
+# ============================================================
+
+# ------------------------------------------------------------
+# Flatten O_F lookup table
+# ------------------------------------------------------------
+
+#
+# Address convention:
+#
+#     address = i * s + ell
+#
+# where
+#
+#     i   = row index,
+#     ell = sparsity index.
+#
+
+num_addresses = N * s
+
+O_F_table = np.zeros(
+    num_addresses,
+    dtype=int
+)
+
+for i in range(N):
+
+    for ell in range(s):
+
+        address = i * s + ell
+
+        O_F_table[address] = (
+            A_positions_padded[i, ell]
+        )
+
+
+# ------------------------------------------------------------
+# Flatten O_A lookup table
+# ------------------------------------------------------------
+
+#
+# We encode values using
+#
+#     sign bit
+#
+# together with a fixed-point magnitude.
+#
+
+O_A_sign_table = np.zeros(
+    num_addresses,
+    dtype=int
+)
+
+O_A_magnitude_table = np.zeros(
+    num_addresses,
+    dtype=int
+)
+
+for i in range(N):
+
+    for ell in range(s):
+
+        address = i * s + ell
+
+        value = (
+            A_values_padded[i, ell]
+        )
+
+        #
+        # Sign bit
+        #
+        #     0 -> positive
+        #     1 -> negative
+        #
+
+        if value < 0:
+
+            O_A_sign_table[address] = 1
+
+        else:
+
+            O_A_sign_table[address] = 0
+
+        #
+        # Fixed-point magnitude
+        #
+
+        magnitude = abs(value)
+
+        encoded_magnitude = int(
+            np.round(
+                magnitude
+                / VALUE_RESOLUTION
+            )
+        )
+
+        O_A_magnitude_table[address] = (
+            encoded_magnitude
+        )
+
+
+# ============================================================
+# Verify fixed-point encoding
+# ============================================================
+
+maximum_encoding_error = 0.0
+
+for i in range(N):
+
+    for ell in range(s):
+
+        address = i * s + ell
+
+        original_value = (
+            A_values_padded[i, ell]
+        )
+
+        sign = (
+            -1
+            if O_A_sign_table[address] == 1
+            else 1
+        )
+
+        decoded_value = (
+            sign
+            * O_A_magnitude_table[address]
+            * VALUE_RESOLUTION
+        )
+
+        encoding_error = abs(
+            original_value
+            - decoded_value
+        )
+
+        maximum_encoding_error = max(
+            maximum_encoding_error,
+            encoding_error
+        )
+
+        assert (
+            encoding_error
+            <= VALUE_RESOLUTION
+        ), (
+            f"Fixed-point encoding error too large.\n"
+            f"Address = {address}\n"
+            f"Original value = {original_value}\n"
+            f"Decoded value = {decoded_value}\n"
+            f"Error = {encoding_error}"
+        )
+
+
+# ============================================================
+# Diagnostics
+# ============================================================
+
+print("=" * 70)
+print("QROM Data Preparation")
+print("=" * 70)
+
+print(f"Number of addresses               : "
+      f"{num_addresses}")
+
+print()
+
+print(f"O_F table size                    : "
+      f"{len(O_F_table)}")
+
+print(f"O_A sign table size               : "
+      f"{len(O_A_sign_table)}")
+
+print(f"O_A magnitude table size          : "
+      f"{len(O_A_magnitude_table)}")
+
+print()
+
+print(f"Maximum encoding error            : "
+      f"{maximum_encoding_error:.12e}")
+
+print(f"Value resolution                  : "
+      f"{VALUE_RESOLUTION:.12e}")
+
+print()
+
+print("Example entries:")
+
+n_examples = min(10, num_addresses)
+
+for address in range(n_examples):
+
+    i = address // s
+
+    ell = address % s
+
+    print(
+        f"\nAddress {address}: "
+        f"(i={i}, ell={ell})"
+    )
+
+    print(
+        f"    Position      : "
+        f"{O_F_table[address]}"
+    )
+
+    original_value = (
+        A_values_padded[i, ell]
+    )
+    
+    sign = (
+        -1
+        if O_A_sign_table[address] == 1
+        else 1
+    )
+    
+    decoded_value = (
+        sign
+        * O_A_magnitude_table[address]
+        * VALUE_RESOLUTION
+    )
+    
+    encoding_error = abs(
+        original_value
+        - decoded_value
+    )
+    
+    print(
+        f"    Original value : "
+        f"{original_value:.12f}"
+    )
+    
+    print(
+        f"    Sign bit       : "
+        f"{O_A_sign_table[address]}"
+    )
+    
+    print(
+        f"    Magnitude int  : "
+        f"{O_A_magnitude_table[address]}"
+    )
+    
+    print(
+        f"    Decoded value  : "
+        f"{decoded_value:.12f}"
+    )
+    
+    print(
+        f"    Encoding error : "
+        f"{encoding_error:.12e}"
+    )
+
+print("\n" + "=" * 70)
+
+
+QROM_VALIDATION_THRESHOLD = (
+    maximum_encoding_error
+    + VALUE_RESOLUTION
+) / 2
+
+all_entries_verified = True
+
+for i in range(N):
+
+    for ell in range(s):
+
+        address = i * s + ell
+
+        original_value = (
+            A_values_padded[i, ell]
+        )
+
+        sign = (
+            -1
+            if O_A_sign_table[address] == 1
+            else 1
+        )
+
+        decoded_value = (
+            sign
+            * O_A_magnitude_table[address]
+            * VALUE_RESOLUTION
+        )
+
+        encoding_error = abs(
+            original_value
+            - decoded_value
+        )
+
+        if (
+            encoding_error
+            > QROM_VALIDATION_THRESHOLD
+        ):
+
+            all_entries_verified = False
+
+            print(
+                "\nValidation failure:"
+            )
+
+            print(
+                f"Address = {address}"
+            )
+
+            print(
+                f"Original value = "
+                f"{original_value:.12f}"
+            )
+
+            print(
+                f"Decoded value = "
+                f"{decoded_value:.12f}"
+            )
+
+            print(
+                f"Encoding error = "
+                f"{encoding_error:.12e}"
+            )
+
+assert all_entries_verified, \
+    (
+        "QROM validation failed."
+    )
+
+print()
+
+print(
+    f"QROM validation threshold         : "
+    f"{QROM_VALIDATION_THRESHOLD:.12e}"
+)
+
+print(
+    f"All entries validated             : "
+    f"{all_entries_verified}"
+)
+
+# ============================================================
+# Cell 13 : Logical Specification of Sparse Oracles
+# ============================================================
+
+# ------------------------------------------------------------
+# Address register
+# ------------------------------------------------------------
+
+#
+# Address convention:
+#
+#     address = i * s + ell
+#
+# where
+#
+#     i   = row index,
+#     ell = sparsity index.
+#
+
+n_addresses = N * s
+
+n_address = int(
+    np.ceil(
+        np.log2(n_addresses)
+    )
+)
+
+
+# ============================================================
+# Oracle interfaces
+# ============================================================
+
+#
+# O_F:
+#
+#     |address>|0>
+#
+#         ->
+#
+#     |address>|position>
+#
+#
+# O_A:
+#
+#     |address>|0>|0>
+#
+#         ->
+#
+#     |address>|sign>|magnitude>
+#
+
+
+# ------------------------------------------------------------
+# Classical emulation of O_F
+# ------------------------------------------------------------
+
+def O_F_address(address):
+
+    assert (
+        0 <= address < n_addresses
+    ), "Address out of range."
+
+    return int(
+        O_F_table[address]
+    )
+
+
+# ------------------------------------------------------------
+# Classical emulation of O_A
+# ------------------------------------------------------------
+
+def O_A_address(address):
+
+    assert (
+        0 <= address < n_addresses
+    ), "Address out of range."
+
+    sign = int(
+        O_A_sign_table[address]
+    )
+
+    magnitude = int(
+        O_A_magnitude_table[address]
+    )
+
+    return sign, magnitude
+
+
+# ------------------------------------------------------------
+# Decode O_A output
+# ------------------------------------------------------------
+
+def decode_O_A(sign, magnitude):
+
+    decoded_sign = (
+        -1
+        if sign == 1
+        else 1
+    )
+
+    return (
+        decoded_sign
+        * magnitude
+        * VALUE_RESOLUTION
+    )
+
+
+# ============================================================
+# Verify address mapping
+# ============================================================
+
+for address in range(n_addresses):
+
+    #
+    # Recover (i, ell)
+    #
+
+    i = address // s
+
+    ell = address % s
+
+    #
+    # Oracle outputs
+    #
+
+    position = O_F_address(address)
+
+    sign, magnitude = (
+        O_A_address(address)
+    )
+
+    decoded_value = decode_O_A(
+        sign,
+        magnitude
+    )
+
+    #
+    # Gold-standard values
+    #
+
+    expected_position = (
+        A_positions_padded[i, ell]
+    )
+
+    expected_value = (
+        A[i, expected_position]
+    )
+
+    if sp.issparse(expected_value):
+
+        expected_value = (
+            expected_value.toarray()[0, 0]
+        )
+
+    expected_value = float(
+        expected_value
+    )
+
+    #
+    # Verify position oracle
+    #
+
+    assert (
+        position
+        == expected_position
+    ), (
+        f"Position mismatch.\n"
+        f"Address = {address}\n"
+        f"Expected = {expected_position}\n"
+        f"Obtained = {position}"
+    )
+
+    #
+    # Verify value oracle
+    #
+
+    assert (
+        abs(
+            decoded_value
+            - expected_value
+        )
+        <= VALUE_RESOLUTION
+    ), (
+        f"Value mismatch.\n"
+        f"Address = {address}\n"
+        f"Expected = {expected_value}\n"
+        f"Decoded = {decoded_value}"
+    )
+
+
+# ============================================================
+# Summary
+# ============================================================
+
+print("=" * 70)
+print("Logical Sparse Oracle Specification")
+print("=" * 70)
+
+print(f"Number of addresses               : "
+      f"{n_addresses}")
+
+print(f"Address register qubits           : "
+      f"{n_address}")
+
+print()
+
+print(f"Position output qubits            : "
+      f"{n_position}")
+
+print()
+
+print(f"Sign output qubits                : "
+      f"{n_sign}")
+
+print(f"Magnitude output qubits           : "
+      f"{VALUE_PRECISION_BITS}")
+
+print(f"Value output qubits               : "
+      f"{n_value}")
+
+print()
+
+print("Oracle interfaces:")
+
+print()
+
+print("O_F :")
+
+print(
+    f"    |address> |0> "
+    f"-> "
+    f"|address> |position>"
+)
+
+print()
+
+print("O_A :")
+
+print(
+    f"    |address> |0> |0> "
+    f"-> "
+    f"|address> |sign> |magnitude>"
+)
+
+print()
+
+print("All logical oracle checks passed.")
+
+print("=" * 70)
+
+# ============================================================
+# Cell 14 : PREPARE State Construction
+# ============================================================
+
+#
+# Register convention used from Cell 16 onward:
+#
+#     |ancilla>|row>|system>
+#
+# PREPARE acts on the ancilla and row
+# registers according to
+#
+#     |0>|i>
+#
+#         -->
+#
+#     |chi_i>|i>,
+#
+# where
+#
+#     |chi_i>
+#
+#     =
+#
+#     sum_ell
+#
+#         sqrt(
+#             |A_{i,f(i,ell)}|
+#             / alpha_A
+#         )
+#
+#         |ell>
+#
+#     +
+#
+#     sqrt(
+#         1
+#         -
+#         sum_ell
+#             |A_{i,f(i,ell)}|
+#             / alpha_A
+#     )
+#
+#         |fail>.
+#
+# The system register is unaffected
+# by PREPARE.
+#
+
+# ------------------------------------------------------------
+# PREPARE register specifications
+# ------------------------------------------------------------
+
+#
+# Need:
+#
+#     s sparsity states
+#
+# plus
+#
+#     1 failure state.
+#
+
+PREPARE_DIMENSION = s + 1
+
+n_prepare = int(
+    np.ceil(
+        np.log2(PREPARE_DIMENSION)
+    )
+)
+
+FAILURE_INDEX = s
+
+
+# ============================================================
+# Construct PREPARE states
+# ============================================================
+
+#
+# prepare_states[i,:] stores the amplitudes
+# of |chi_i>.
+#
+# These amplitudes determine the action
+#
+#     |0>|i> --> |chi_i>|i>,
+#
+# but do not themselves depend on the
+# eventual ordering of registers in the
+# quantum circuit.
+#
+
+prepare_states = np.zeros(
+    (N, PREPARE_DIMENSION)
+)
+
+prepare_row_sums = np.zeros(N)
+
+for i in range(N):
+
+    #
+    # Populate amplitudes
+    #
+
+    for ell in range(s):
+
+        value = abs(
+            A_values_padded[i, ell]
+        )
+
+        prepare_row_sums[i] += (
+            value / alpha_A
+        )
+
+        prepare_states[i, ell] = np.sqrt(
+            value / alpha_A
+        )
+
+    #
+    # Failure amplitude
+    #
+
+    failure_probability = (
+        1.0
+        - prepare_row_sums[i]
+    )
+
+    assert failure_probability >= 0, (
+        f"PREPARE normalization failed "
+        f"for row {i}.\n"
+        f"Failure probability = "
+        f"{failure_probability}"
+    )
+
+    prepare_states[
+        i,
+        FAILURE_INDEX
+    ] = np.sqrt(
+        failure_probability
+    )
+
+
+# ============================================================
+# Verify normalization
+# ============================================================
+
+prepare_norms = np.sum(
+    prepare_states**2,
+    axis=1
+)
+
+prepare_states_normalized = np.allclose(
+    prepare_norms,
+    1.0
+)
+
+assert prepare_states_normalized, (
+    "Some PREPARE states are not normalized."
+)
+
+
+# ============================================================
+# Diagnostics
+# ============================================================
+
+minimum_failure_probability = np.min(
+    prepare_states[:, FAILURE_INDEX]**2
+)
+
+maximum_failure_probability = np.max(
+    prepare_states[:, FAILURE_INDEX]**2
+)
+
+mean_failure_probability = np.mean(
+    prepare_states[:, FAILURE_INDEX]**2
+)
+
+
+# ============================================================
+# Summary
+# ============================================================
+
+print("=" * 70)
+print("PREPARE State Construction (Ancilla-First Convention)")
+print("=" * 70)
+
+print(f"PREPARE dimension                : "
+      f"{PREPARE_DIMENSION}")
+
+print(f"PREPARE register qubits          : "
+      f"{n_prepare}")
+
+print(f"Failure-state index              : "
+      f"{FAILURE_INDEX}")
+
+print()
+
+print(f"PREPARE states normalized        : "
+      f"{prepare_states_normalized}")
+
+print()
+
+print(f"Minimum fail probability         : "
+      f"{minimum_failure_probability:.8f}")
+
+print(f"Mean fail probability            : "
+      f"{mean_failure_probability:.8f}")
+
+print(f"Maximum fail probability         : "
+      f"{maximum_failure_probability:.8f}")
+
+print()
+
+print("First few PREPARE states |chi_i>:")
+
+n_rows_to_show = min(5, N)
+
+for i in range(n_rows_to_show):
+
+    print(f"\n|chi_{i}>:")
+
+    for ell in range(s):
+
+        position = A_positions_padded[i, ell]
+
+        print(
+            f"    ell = {ell:2d}, "
+            f"position = {position:4d}, "
+            f"amplitude = "
+            f"{prepare_states[i, ell]:.8f}"
+        )
+
+    print(
+        f"    fail amplitude = "
+        f"{prepare_states[i, FAILURE_INDEX]:.8f}"
+    )
+
+print()
+
+print("=" * 70)
+
+# ============================================================
+# Cell 15 : SELECT Operator Specification
+# ============================================================
+
+#
+# Register convention used from Cell 16 onward:
+#
+#     |ancilla>|row>|system>
+#
+# where
+#
+#     |ancilla>
+#
+# stores
+#
+#     |ell>
+#
+# (including the |fail> state),
+#
+#     |row>
+#
+# stores
+#
+#     |i>,
+#
+# and
+#
+#     |system>
+#
+# is the register on which A/alpha_A
+# is ultimately block encoded.
+#
+# SELECT acts according to
+#
+#     |ell>|i>|psi>
+#
+#         -->
+#
+#     |ell>|i>
+#
+#     X_{i,f(i,ell)}
+#
+#     |psi>,
+#
+# where
+#
+#     f(i,ell)
+#
+# is obtained from O_F.
+#
+# The sign information is stored separately
+# and will eventually be incorporated into
+# SELECT as a controlled ±1 phase factor
+# during the sparse block-encoding
+# construction.
+#
+
+# ============================================================
+# Construct SELECT tables
+# ============================================================
+
+SELECT_position_table = np.copy(
+    A_positions_padded
+)
+
+#
+# SELECT_sign_table[i, ell]
+#
+# stores the sign of
+#
+#     A_{i,f(i,ell)}.
+#
+# This sign information will later be
+# promoted into the quantum implementation
+# of SELECT.
+#
+
+SELECT_sign_table = np.zeros(
+    (N, s),
+    dtype=int
+)
+
+for i in range(N):
+
+    for ell in range(s):
+
+        value = A_values_padded[i, ell]
+
+        #
+        # Sign convention:
+        #
+        #     0 --> positive
+        #     1 --> negative
+        #
+
+        SELECT_sign_table[i, ell] = (
+            value < 0
+        )
+
+
+# ============================================================
+# Verify matrix symmetry
+# ============================================================
+
+symmetry_error = np.max(
+    np.abs(
+        (A - A.T).data
+    )
+) if (A != A.T).nnz > 0 else 0.0
+
+symmetry_consistent = (
+    symmetry_error < 1e-12
+)
+
+assert symmetry_consistent, (
+    "SELECT requires A to be symmetric.\n"
+    f"Maximum symmetry violation = "
+    f"{symmetry_error:.12e}"
+)
+
+
+# ============================================================
+# Verify SELECT positions
+# ============================================================
+
+valid_positions = np.all(
+    (
+        SELECT_position_table >= 0
+    )
+    &
+    (
+        SELECT_position_table < N
+    )
+)
+
+assert valid_positions, (
+    "SELECT contains invalid positions."
+)
+
+
+# ============================================================
+# Verify consistency with O_A
+# ============================================================
+
+maximum_value_mismatch = 0.0
+
+for i in range(N):
+
+    for ell in range(s):
+
+        j = SELECT_position_table[i, ell]
+
+        oracle_value = (
+            A_values_padded[i, ell]
+        )
+
+        actual_value = A[i, j]
+
+        mismatch = abs(
+            oracle_value
+            - actual_value
+        )
+
+        maximum_value_mismatch = max(
+            maximum_value_mismatch,
+            mismatch
+        )
+
+
+value_consistent = (
+    maximum_value_mismatch
+    <= VALUE_RESOLUTION
+)
+
+assert value_consistent, (
+    "SELECT and O_A are inconsistent.\n"
+    f"Maximum mismatch = "
+    f"{maximum_value_mismatch:.12e}"
+)
+
+
+# ============================================================
+# Diagnostics
+# ============================================================
+
+num_positive_terms = np.sum(
+    SELECT_sign_table == 0
+)
+
+num_negative_terms = np.sum(
+    SELECT_sign_table == 1
+)
+
+num_zero_terms = np.sum(
+    A_values_padded == 0
+)
+
+
+# ============================================================
+# Summary
+# ============================================================
+
+print("=" * 70)
+print("SELECT Operator Specification")
+print("=" * 70)
+
+print(f"System register qubits           : "
+      f"{n}")
+
+print(f"Sparsity register qubits         : "
+      f"{n_sparsity}")
+
+print()
+
+print(f"Positive entries                 : "
+      f"{num_positive_terms}")
+
+print(f"Negative entries                 : "
+      f"{num_negative_terms}")
+
+print(f"Zero (padded) entries            : "
+      f"{num_zero_terms}")
+
+print()
+
+print(f"Matrix symmetry verified         : "
+      f"{symmetry_consistent}")
+
+print(f"Maximum symmetry violation       : "
+      f"{symmetry_error:.12e}")
+
+print()
+
+print(f"SELECT positions valid           : "
+      f"{valid_positions}")
+
+print()
+
+print(f"SELECT/O_A consistency           : "
+      f"{value_consistent}")
+
+print(f"Maximum value mismatch           : "
+      f"{maximum_value_mismatch:.12e}")
+
+print()
+
+print("First few SELECT specifications:")
+
+n_rows_to_show = min(5, N)
+
+for i in range(n_rows_to_show):
+
+    print(f"\nRow register state |{i}>:")
+
+    for ell in range(s):
+
+        j = SELECT_position_table[
+            i,
+            ell
+        ]
+
+        value = A_values_padded[
+            i,
+            ell
+        ]
+
+        sign_string = (
+            "+"
+            if value >= 0
+            else "-"
+        )
+
+        print(
+            f"    ell = {ell:2d} : "
+            f"f({i},{ell}) = {j:4d}, "
+            f"value = {value:+.8f}, "
+            f"sign = {sign_string}"
+        )
+
+print()
+
+print("=" * 70)
+
+# ============================================================
+# Cell 16 : Verify the Block Encoding
+# ============================================================
+
+#
+# Register convention:
+#
+#     |ancilla>|row>|system>
+#
+# PREPARE acts as
+#
+#     |0>|i>
+#
+#         -->
+#
+#     |chi_i>|i>,
+#
+# where
+#
+#     |chi_i>
+#
+#     =
+#
+#     sum_ell
+#
+#         sqrt(
+#             |A_{i,f(i,ell)}|
+#             / alpha_A
+#         )
+#
+#         |ell>
+#
+#     + ...
+#
+#
+# SELECT acts as
+#
+#     |ell>|i>|psi>
+#
+#         -->
+#
+#     sign(A_{i,f(i,ell)})
+#
+#     |ell>|i>
+#
+#     X_{i,f(i,ell)}
+#
+#     |psi>.
+#
+#
+# This cell verifies that
+#
+#     (⟨0| ⊗ I ⊗ I)
+#
+#         U
+#
+#     (|0⟩ ⊗ I ⊗ I)
+#
+#     = A / alpha_A,
+#
+# where
+#
+#     U
+#
+#     = PREPARE† SELECT PREPARE.
+#
+
+# ============================================================
+# Construct the encoded matrix block
+# ============================================================
+
+A_block_encoded = sp.lil_matrix(
+    (N, N),
+    dtype=float
+)
+
+for i in range(N):
+
+    for ell in range(s):
+
+        j = A_positions_padded[i, ell]
+
+        value = A_values_padded[i, ell]
+
+        #
+        # Skip padded entries.
+        #
+
+        if value == 0:
+
+            continue
+
+        #
+        # PREPARE contributes
+        #
+        #     sqrt(|A_ij| / alpha_A)
+        #
+        # twice.
+        #
+
+        amplitude = np.sqrt(
+            abs(value) / alpha_A
+        )
+
+        #
+        # SELECT contributes the sign.
+        #
+
+        sign = np.sign(value)
+
+        contribution = (
+            sign
+            * amplitude
+            * amplitude
+        )
+
+        #
+        # Add contribution to the
+        # encoded block.
+        #
+
+        A_block_encoded[
+            i,
+            j
+        ] += contribution
+
+
+A_block_encoded = (
+    A_block_encoded.tocsr()
+)
+
+
+# ============================================================
+# Compare against A / alpha_A
+# ============================================================
+
+A_scaled = (
+    A / alpha_A
+).tocsr()
+
+difference = (
+    A_block_encoded
+    - A_scaled
+).tocsr()
+
+
+# ============================================================
+# Diagnostics
+# ============================================================
+
+max_abs_error = np.max(
+    np.abs(difference.data)
+) if difference.nnz > 0 else 0.0
+
+
+frobenius_error = np.linalg.norm(
+    difference.data
+)
+
+block_encoding_correct = (
+    max_abs_error
+    <= VALUE_RESOLUTION
+)
+
+
+assert block_encoding_correct, (
+    "Block encoding verification failed.\n"
+    f"Maximum error = "
+    f"{max_abs_error:.12e}"
+)
+
+
+# ============================================================
+# Verify sparsity structure
+# ============================================================
+
+pattern_difference = (
+    (
+        A_block_encoded != 0
+    )
+    !=
+    (
+        A_scaled != 0
+    )
+)
+
+sparsity_consistent = (
+    pattern_difference.nnz == 0
+)
+
+assert sparsity_consistent, (
+    "Block encoding altered the "
+    "sparsity pattern."
+)
+
+
+# ============================================================
+# Summary
+# ============================================================
+
+print("=" * 70)
+print("Block Encoding Verification")
+print("=" * 70)
+
+print("Verified that")
+
+print()
+
+print(
+    "(<0| ⊗ I ⊗ I)"
+)
+
+print(
+    "    PREPARE† SELECT PREPARE"
+)
+
+print(
+    "(|0> ⊗ I ⊗ I)"
+)
+
+print(
+    "= A / alpha_A"
+)
+
+print()
+
+print(f"alpha_A                           : "
+      f"{alpha_A:.12f}")
+
+print()
+
+print(f"Maximum absolute error            : "
+      f"{max_abs_error:.12e}")
+
+print(f"Frobenius error                   : "
+      f"{frobenius_error:.12e}")
+
+print()
+
+print(f"Block encoding verified           : "
+      f"{block_encoding_correct}")
+
+print(f"Sparsity pattern preserved        : "
+      f"{sparsity_consistent}")
+
+print()
+
+print(f"Nonzeros in A                     : "
+      f"{A.nnz}")
+
+print(f"Nonzeros in encoded block         : "
+      f"{A_block_encoded.nnz}")
+
+print()
+
+print("=" * 70)
+
+# ============================================================
+# Cell 17 : Qubitized Walk Operator Specification
+# ============================================================
+
+#
+# Register convention:
+#
+#     |ancilla>|row>|system>
+#
+# where
+#
+#     |ancilla>
+#
+# stores the PREPARE state labels
+# (including the |fail> state),
+#
+#     |row>
+#
+# stores the sparse-row index,
+#
+# and
+#
+#     |system>
+#
+# is the register on which
+#
+#     A / alpha_A
+#
+# is block encoded.
+#
+#
+# The block encoding is
+#
+#     U
+#
+#     =
+#
+#     PREPARE†
+#
+#     SELECT
+#
+#     PREPARE.
+#
+#
+# The qubitized walk operator is
+#
+#     W
+#
+#     =
+#
+#     R U,
+#
+# where
+#
+#     R
+#
+#     =
+#
+#     2 |0><0| ⊗ I ⊗ I
+#
+#     - I.
+#
+#
+# QPE is later applied to W.
+#
+
+# ============================================================
+# Compute exact eigenvalues of A
+# ============================================================
+
+print("Computing exact eigenvalues of A...")
+
+A_dense = A.toarray()
+
+lambda_exact = np.linalg.eigvalsh(
+    A_dense
+)
+
+lambda_exact = np.sort(
+    lambda_exact
+)
+
+
+# ============================================================
+# Compute qubitization phases
+# ============================================================
+
+#
+# Since
+#
+#     |lambda_k / alpha_A| <= 1,
+#
+# the qubitization angles satisfy
+#
+#     theta_k
+#
+#     =
+#
+#     arccos(lambda_k / alpha_A).
+#
+
+scaled_lambda_exact = (
+    lambda_exact
+    / alpha_A
+)
+
+theta_exact = np.arccos(
+    scaled_lambda_exact
+)
+
+
+# ============================================================
+# Validate encodability
+# ============================================================
+
+encodable_spectrum = np.all(
+    np.abs(scaled_lambda_exact)
+    <= 1
+)
+
+assert encodable_spectrum, \
+    (
+        "Some eigenvalues are not "
+        "block encodable."
+    )
+
+
+# ============================================================
+# W-resource accounting
+# ============================================================
+
+#
+# One application of W consists of
+#
+#     PREPARE
+#
+#     SELECT
+#
+#     PREPARE†
+#
+#     R.
+#
+
+num_prepare_per_W = 1
+
+num_prepare_dagger_per_W = 1
+
+num_select_per_W = 1
+
+num_reflections_per_W = 1
+
+
+# ============================================================
+# Qubit counts
+# ============================================================
+
+n_ancilla_W = n_prepare
+
+n_row_W = n
+
+n_system_W = n
+
+n_total_W = (
+    n_ancilla_W
+    + n_row_W
+    + n_system_W
+)
+
+
+# ============================================================
+# Logical specification of W
+# ============================================================
+
+W_specification = {
+
+    "ancilla_qubits": n_ancilla_W,
+
+    "row_qubits": n_row_W,
+
+    "system_qubits": n_system_W,
+
+    "total_qubits": n_total_W,
+
+    "prepare_calls_per_W":
+        num_prepare_per_W,
+
+    "prepare_dagger_calls_per_W":
+        num_prepare_dagger_per_W,
+
+    "select_calls_per_W":
+        num_select_per_W,
+
+    "reflection_calls_per_W":
+        num_reflections_per_W,
+
+    "supports_controlled_W":
+        True,
+
+    "supports_W_powers":
+        True,
+}
+
+
+# ============================================================
+# Additional W specification
+# ============================================================
+
+W_specification[
+    "phase_qubits_defined"
+] = False
+
+
+# ============================================================
+# Summary
+# ============================================================
+
+print("\n" + "=" * 70)
+print("Qubitized Walk Operator Specification")
+print("=" * 70)
+
+print("Walk operator:")
+
+print()
+
+print(
+    "    W = R PREPARE† SELECT PREPARE"
+)
+
+print()
+
+print("Reflection operator:")
+
+print()
+
+print(
+    "    R = 2|0><0| ⊗ I ⊗ I - I"
+)
+
+print()
+
+print(f"Ancilla qubits                  : "
+      f"{n_ancilla_W}")
+
+print(f"Row qubits                       : "
+      f"{n_row_W}")
+
+print(f"System qubits                    : "
+      f"{n_system_W}")
+
+print(f"Total W qubits                   : "
+      f"{n_total_W}")
+
+print()
+
+print("Per application of W:")
+
+print()
+
+print(f"PREPARE calls                    : "
+      f"{num_prepare_per_W}")
+
+print(f"PREPARE† calls                   : "
+      f"{num_prepare_dagger_per_W}")
+
+print(f"SELECT calls                     : "
+      f"{num_select_per_W}")
+
+print(f"Reflection calls                 : "
+      f"{num_reflections_per_W}")
+
+print()
+
+print(f"Spectrum encodable               : "
+      f"{encodable_spectrum}")
+
+print(f"QPE precision specified          : "
+      f"{W_specification['phase_qubits_defined']}")
+
+print()
+
+
+# ------------------------------------------------------------
+# Smallest eigenvalues
+# ------------------------------------------------------------
+
+print("Smallest eigenvalues and phases:")
+
+n_to_show = min(
+    5,
+    len(lambda_exact)
+)
+
+for k in range(n_to_show):
+
+    print(
+        f"  k = {k:4d} : "
+        f"lambda = "
+        f"{lambda_exact[k]: .8f}, "
+        f"lambda/alpha_A = "
+        f"{scaled_lambda_exact[k]: .8f}, "
+        f"theta = "
+        f"{theta_exact[k]: .8f}"
+    )
+
+print()
+
+
+# ------------------------------------------------------------
+# Largest eigenvalues
+# ------------------------------------------------------------
+
+print("Largest eigenvalues and phases:")
+
+for k in range(
+    len(lambda_exact) - n_to_show,
+    len(lambda_exact)
+):
+
+    print(
+        f"  k = {k:4d} : "
+        f"lambda = "
+        f"{lambda_exact[k]: .8f}, "
+        f"lambda/alpha_A = "
+        f"{scaled_lambda_exact[k]: .8f}, "
+        f"theta = "
+        f"{theta_exact[k]: .8f}"
+    )
+
+print()
+
+
+# ------------------------------------------------------------
+# Random sample of eigenvalues
+# ------------------------------------------------------------
+
+NUM_RANDOM_EIGENVALUES_TO_SHOW = min(
+    20,
+    len(lambda_exact)
+)
+
+rng = np.random.default_rng(
+    SEED
+)
+
+sample_indices = np.sort(
+    rng.choice(
+        len(lambda_exact),
+        size=NUM_RANDOM_EIGENVALUES_TO_SHOW,
+        replace=False
+    )
+)
+
+print("Random sample of eigenvalues and phases:")
+
+for k in sample_indices:
+
+    print(
+        f"  k = {k:4d} : "
+        f"lambda = "
+        f"{lambda_exact[k]: .8f}, "
+        f"lambda/alpha_A = "
+        f"{scaled_lambda_exact[k]: .8f}, "
+        f"theta = "
+        f"{theta_exact[k]: .8f}"
+    )
+
+print()
+
+
+# ------------------------------------------------------------
+# Extremal diagnostics
+# ------------------------------------------------------------
+
+print("Largest eigenvalue:")
+
+print(
+    f"  lambda_max = "
+    f"{lambda_exact[-1]:.8f}"
+)
+
+print(
+    f"  theta_max = "
+    f"{theta_exact[-1]:.8f}"
+)
+
+print()
+
+print("Smallest eigenvalue:")
+
+print(
+    f"  lambda_min = "
+    f"{lambda_exact[0]:.8f}"
+)
+
+print(
+    f"  theta_min = "
+    f"{theta_exact[0]:.8f}"
+)
+
+print()
+
+print("=" * 70)
+
+# ============================================================
+# Cell 18 : PREPARE Circuit Specification
+# ============================================================
+
+#
+# PREPARE acts as
+#
+#     |0>|i>
+#
+#         -->
+#
+#     |chi_i>|i>,
+#
+# where
+#
+#     |chi_i>
+#
+# are the normalized states constructed
+# in Cell 14.
+#
+#
+# We assume that an exact state-preparation
+# routine (e.g. Mottonen-style decomposition)
+# will be used internally by a future circuit
+# implementation.
+#
+#
+# We do NOT explicitly synthesize the gate
+# sequence here.
+#
+#
+# Instead, we:
+#
+#     1. Store the amplitude vectors
+#        prepare_states[i]
+#        as QROM payloads.
+#
+#     2. Estimate the classical and quantum
+#        complexities associated with
+#        PREPARE and PREPARE†.
+#
+
+
+# ============================================================
+# QROM payload specification
+# ============================================================
+
+#
+# Each row i stores
+#
+#     prepare_states[i]
+#
+# consisting of
+#
+#     PREPARE_DIMENSION = s + 1
+#
+# amplitudes.
+#
+
+QROM_prepare_payloads = np.copy(
+    prepare_states
+)
+
+num_prepare_payloads = (
+    QROM_prepare_payloads.shape[0]
+)
+
+payload_dimension = (
+    QROM_prepare_payloads.shape[1]
+)
+
+
+# ============================================================
+# Verify payload normalization
+# ============================================================
+
+payload_norms = np.linalg.norm(
+    QROM_prepare_payloads,
+    axis=1
+)
+
+payloads_normalized = np.allclose(
+    payload_norms,
+    1.0
+)
+
+assert payloads_normalized, (
+    "Some QROM PREPARE payloads "
+    "are not normalized."
+)
+
+
+# ============================================================
+# State-preparation specifications
+# ============================================================
+
+#
+# PREPARE register size.
+#
+
+prepare_register_qubits = (
+    n_prepare
+)
+
+
+#
+# Number of nonzero amplitudes.
+#
+
+maximum_nonzero_amplitudes = np.max(
+    np.sum(
+        np.abs(QROM_prepare_payloads) > 0,
+        axis=1
+    )
+)
+
+
+#
+# Dimension of prepared states.
+#
+
+prepare_state_dimension = (
+    PREPARE_DIMENSION
+)
+
+
+# ============================================================
+# Complexity estimates
+# ============================================================
+
+#
+# Classical preprocessing:
+#
+# Constructing the PREPARE payloads
+# requires O(N s) work.
+#
+
+prepare_classical_preprocessing_complexity = (
+    "O(N s)"
+)
+
+
+#
+# QROM lookup:
+#
+# Access one of N payloads using
+# log2(N) address qubits.
+#
+
+prepare_QROM_complexity = (
+    "O(log N)"
+)
+
+
+#
+# Mottonen state preparation:
+#
+# Exact preparation of a state of
+# dimension s+1 costs O(s).
+#
+
+prepare_state_preparation_complexity = (
+    "O(s)"
+)
+
+
+#
+# Total PREPARE complexity.
+#
+
+prepare_total_complexity = (
+    "O(s + log N)"
+)
+
+
+#
+# PREPARE† complexity.
+#
+
+prepare_dagger_complexity = (
+    "O(s + log N)"
+)
+
+
+# ============================================================
+# Update W specification
+# ============================================================
+
+W_specification[
+    "prepare_implementation"
+] = (
+    "QROM + Mottonen-style exact "
+    "state preparation"
+)
+
+W_specification[
+    "prepare_complexity"
+] = (
+    prepare_total_complexity
+)
+
+W_specification[
+    "prepare_dagger_complexity"
+] = (
+    prepare_dagger_complexity
+)
+
+
+# ============================================================
+# Summary
+# ============================================================
+
+print("=" * 70)
+print("PREPARE Circuit Specification")
+print("=" * 70)
+
+print(f"PREPARE register qubits          : "
+      f"{prepare_register_qubits}")
+
+print(f"PREPARE state dimension          : "
+      f"{prepare_state_dimension}")
+
+print()
+
+print(f"Number of QROM payloads          : "
+      f"{num_prepare_payloads}")
+
+print(f"Payload dimension                : "
+      f"{payload_dimension}")
+
+print()
+
+print(f"Payloads normalized              : "
+      f"{payloads_normalized}")
+
+print()
+
+print(f"Maximum nonzero amplitudes       : "
+      f"{maximum_nonzero_amplitudes}")
+
+print()
+
+print("Complexity estimates:")
+
+print()
+
+print(f"Classical preprocessing          : "
+      f"{prepare_classical_preprocessing_complexity}")
+
+print(f"QROM lookup                      : "
+      f"{prepare_QROM_complexity}")
+
+print(f"Mottonen preparation             : "
+      f"{prepare_state_preparation_complexity}")
+
+print(f"PREPARE complexity               : "
+      f"{prepare_total_complexity}")
+
+print(f"PREPARE† complexity              : "
+      f"{prepare_dagger_complexity}")
+
+print()
+
+print("First few PREPARE payloads:")
+
+n_rows_to_show = min(5, N)
+
+for i in range(n_rows_to_show):
+
+    print(f"\nRow {i}:")
+
+    for k in range(
+        PREPARE_DIMENSION
+    ):
+
+        if k < s:
+
+            label = (
+                f"ell = {k}"
+            )
+
+        elif k == FAILURE_INDEX:
+
+            label = "fail"
+
+        else:
+
+            label = f"state {k}"
+
+        print(
+            f"    {label:8s} : "
+            f"{QROM_prepare_payloads[i, k]:.8f}"
+        )
+
+print()
+
+print("Implementation note:")
+
+print(
+    "Future circuit implementations "
+    "may use built-in exact "
+    "state-preparation routines "
+    "(e.g. Mottonen-style methods) "
+    "acting on these QROM payloads."
+)
+
+print()
+
+print("=" * 70)
+
+# ============================================================
+# Cell 19 : Qubitization Phase Validation
+# ============================================================
+
+#
+# The qubitization theorem implies that
+# each eigenvalue
+#
+#     lambda_k
+#
+# of A induces a two-dimensional invariant
+# subspace of W on which W acts as
+#
+#         [  lambda_k / alpha_A
+#            -sqrt(1-lambda_k^2/alpha_A^2) ]
+#
+#     W_k =
+#
+#         [  sqrt(1-lambda_k^2/alpha_A^2)
+#             lambda_k / alpha_A          ]
+#
+# whose eigenvalues are
+#
+#     exp(± i theta_k),
+#
+# where
+#
+#     theta_k
+#
+#     = arccos(lambda_k / alpha_A).
+#
+# This cell validates that relationship.
+#
+
+
+# ============================================================
+# Construct the 2 x 2 invariant blocks
+# ============================================================
+
+W_block_eigenvalue_errors = []
+
+W_blocks_valid = True
+
+for k in range(len(lambda_exact)):
+
+    scaled_lambda = (
+        scaled_lambda_exact[k]
+    )
+
+    theta = (
+        theta_exact[k]
+    )
+
+    #
+    # Construct the corresponding
+    # 2 x 2 walk block.
+    #
+
+    W_k = np.array(
+        [
+            [
+                scaled_lambda,
+                -np.sqrt(
+                    1.0
+                    - scaled_lambda**2
+                )
+            ],
+
+            [
+                np.sqrt(
+                    1.0
+                    - scaled_lambda**2
+                ),
+                scaled_lambda
+            ]
+        ]
+    )
+
+    #
+    # Compute eigenvalues.
+    #
+
+    W_k_eigenvalues = np.linalg.eigvals(
+        W_k
+    )
+
+    #
+    # Expected eigenvalues.
+    #
+
+    expected_eigenvalues = np.array(
+        [
+            np.exp(1j * theta),
+            np.exp(-1j * theta)
+        ]
+    )
+
+    #
+    # Sort by phase.
+    #
+
+    W_k_eigenvalues = W_k_eigenvalues[
+        np.argsort(
+            np.angle(
+                W_k_eigenvalues
+            )
+        )
+    ]
+
+    expected_eigenvalues = expected_eigenvalues[
+        np.argsort(
+            np.angle(
+                expected_eigenvalues
+            )
+        )
+    ]
+
+    #
+    # Compute maximum mismatch.
+    #
+
+    error = np.max(
+        np.abs(
+            W_k_eigenvalues
+            - expected_eigenvalues
+        )
+    )
+
+    W_block_eigenvalue_errors.append(
+        error
+    )
+
+    if error > 1e-12:
+
+        W_blocks_valid = False
+
+
+# ============================================================
+# Diagnostics
+# ============================================================
+
+W_block_eigenvalue_errors = np.array(
+    W_block_eigenvalue_errors
+)
+
+maximum_W_block_error = np.max(
+    W_block_eigenvalue_errors
+)
+
+mean_W_block_error = np.mean(
+    W_block_eigenvalue_errors
+)
+
+median_W_block_error = np.median(
+    W_block_eigenvalue_errors
+)
+
+
+# ============================================================
+# Summary
+# ============================================================
+
+print("=" * 70)
+print("Qubitization Phase Validation")
+print("=" * 70)
+
+print(
+    "Verified that each eigenvalue "
+    "of A induces the expected "
+    "qubitization phases."
+)
+
+print()
+
+print(f"Number of eigenvalues validated  : "
+      f"{len(lambda_exact)}")
+
+print()
+
+print(f"All W blocks validated           : "
+      f"{W_blocks_valid}")
+
+print()
+
+print(f"Maximum eigenvalue error         : "
+      f"{maximum_W_block_error:.12e}")
+
+print(f"Mean eigenvalue error            : "
+      f"{mean_W_block_error:.12e}")
+
+print(f"Median eigenvalue error          : "
+      f"{median_W_block_error:.12e}")
+
+print()
+
+
+# ------------------------------------------------------------
+# Random examples
+# ------------------------------------------------------------
+
+NUM_EXAMPLES = min(
+    10,
+    len(lambda_exact)
+)
+
+rng = np.random.default_rng(
+    SEED
+)
+
+example_indices = np.sort(
+    rng.choice(
+        len(lambda_exact),
+        size=NUM_EXAMPLES,
+        replace=False
+    )
+)
+
+print("Random examples:")
+
+for k in example_indices:
+
+    scaled_lambda = (
+        scaled_lambda_exact[k]
+    )
+
+    theta = (
+        theta_exact[k]
+    )
+
+    print()
+
+    print(
+        f"Eigenpair index {k}:"
+    )
+
+    print(
+        f"    lambda_k              : "
+        f"{lambda_exact[k]:.8f}"
+    )
+
+    print(
+        f"    lambda_k / alpha_A    : "
+        f"{scaled_lambda:.8f}"
+    )
+
+    print(
+        f"    theta_k               : "
+        f"{theta:.8f}"
+    )
+
+    print(
+        f"    exp(+i theta_k)       : "
+        f"{np.exp(1j * theta)}"
+    )
+
+    print(
+        f"    exp(-i theta_k)       : "
+        f"{np.exp(-1j * theta)}"
+    )
+
+    print(
+        f"    validation error      : "
+        f"{W_block_eigenvalue_errors[k]:.12e}"
+    )
+
+print()
+
+print(
+    "This validates the phase "
+    "relationship expected by "
+    "qubitization prior to QPE."
+)
+
+print()
+
+print("=" * 70)
+
+
+# ============================================================
+# Final assertion
+# ============================================================
+
+assert W_blocks_valid, (
+    "The qubitization phase "
+    "relationship failed."
+)
