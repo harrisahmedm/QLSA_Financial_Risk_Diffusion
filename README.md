@@ -509,3 +509,79 @@ The validation framework includes
 Whenever practical, numerical quantities produced by the quantum circuit are compared against exact results obtained from classical linear algebra.
 
 This layered validation strategy substantially simplifies debugging while providing confidence that each stage of the implementation behaves as expected before being incorporated into the complete Quantum Linear System Algorithm.
+
+# Technologies
+
+The implementation is developed entirely in Python using the scientific Python ecosystem together with IBM's Qiskit framework for quantum circuit construction and simulation.
+
+| Technology | Purpose |
+|------------|---------|
+| **Python** | Core implementation language |
+| **Qiskit** | Quantum circuit construction and simulation |
+| **NumPy** | Numerical linear algebra and matrix manipulation |
+| **SciPy** | Classical sparse linear algebra and validation |
+| **Matplotlib** | Circuit and numerical visualizations |
+| **NetworkX** | Construction and analysis of sparse financial graphs |
+
+---
+
+# Project Report
+
+A detailed technical report accompanies this repository and provides the complete mathematical development of the project, including the financial graph diffusion models, complexity analysis, algorithmic design decisions, experimental results, and comparison of multiple Quantum Linear System Algorithm architectures.
+
+**Report**
+
+`QLSA_Financial_Risk_Diffusion_Report.pdf`
+
+The report describes the work of the entire project team. This repository, however, focuses exclusively on the **QPE-based Quantum Linear System Algorithm implementations**.
+
+My primary contributions include
+
+- mathematical modelling of the graph-based financial diffusion problem,
+- spectral analysis of the proposed system matrices,
+- complexity analysis,
+- design and implementation of the complete QPE-based HHL pipeline,
+- Berry–Childs block encoding,
+- Quantum Phase Estimation,
+- both eigenvalue inversion architectures,
+- validation framework,
+- numerical precision analysis, and
+- implementation of the supporting mathematical infrastructure required throughout the QPE workflow.
+
+The report also discusses a QSVT-based Quantum Linear System Algorithm developed as part of the broader team project. The corresponding QSVT implementation is **not included** in this repository, as its software implementation was developed by my teammates.
+
+State preparation was investigated collaboratively using multiple approaches, including the **Gleinig–Höfler**, **Shukla–Vedula**, and **Sparse-Grover** methods. After evaluating these alternatives, we adopted a simplified variant of the **Shukla–Vedula** algorithm that prepares sparse equal-superposition states using a small number of dummy nodes. Although this approach slightly increases the number of basis states, it preserves the desired **O((log N)²)** state preparation complexity while substantially simplifying the quantum circuit. This allowed the project to focus on the broader Quantum Linear System Algorithm pipeline—including Hamiltonian simulation, block encoding, eigenvalue inversion, and validation—rather than optimizing a single component in isolation.
+
+---
+
+# References
+
+The implementation presented in this repository is based primarily on the following foundational works.
+
+1. **Harrow, Hassidim & Lloyd (2009)**  
+   *Quantum Algorithm for Linear Systems of Equations*  
+   *Physical Review Letters*, **103**, 150502.
+
+2. **Berry & Childs (2012)**  
+   *Black-Box Hamiltonian Simulation and Unitary Implementation*  
+   *Quantum Information and Computation*, **12**(1–2), 29–62.
+
+3. **Low & Chuang (2019)**  
+   *Hamiltonian Simulation by Qubitization*  
+   *Quantum*, **3**, 163.
+
+4. **Shukla & Vedula (2024)**  
+   *An Efficient Quantum Algorithm for Preparation of Uniform Quantum Superposition States*  
+   arXiv:2306.11747.
+
+5. **Zhu, Ghahramani & Lafferty (2003)**  
+   *Semi-Supervised Learning Using Gaussian Fields and Harmonic Functions*  
+   *Proceedings of ICML 2003.*
+
+6. **Belkin, Matveeva & Niyogi (2004)**  
+   *Regularization and Semi-Supervised Learning on Large Graphs*  
+   *Proceedings of COLT 2004.*
+
+7. **Zhou, Bousquet, Lal, Weston & Schölkopf (2004)**  
+   *Learning with Local and Global Consistency*  
+   *Advances in Neural Information Processing Systems (NeurIPS 2004).*
