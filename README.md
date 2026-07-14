@@ -586,7 +586,7 @@ The implementation presented in this repository is based primarily on the follow
    *Learning with Local and Global Consistency*  
    *Advances in Neural Information Processing Systems (NeurIPS 2004).*
    
-# Acknowledgements and Attribution
+# Acknowledgements and Attributions
 
 The helper library `Our_Qiskit_Functions.py`, included in this repository, was originally provided by the teaching assistants as part of the course laboratory infrastructure.
 
