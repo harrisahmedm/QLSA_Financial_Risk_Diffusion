@@ -57,18 +57,149 @@ The primary objective of this repository is therefore not simply to implement HH
 
 Although the experiments presented here are performed on statevector simulators, the overall software architecture has been designed to reflect the modular structure expected of scalable fault-tolerant quantum algorithms, making it straightforward to replace or improve individual components as newer quantum techniques become available.
 
-## Contents
+# Repository Highlights
 
-- QPE-based HHL implementation
-- Simple sparse state preparation
-- Sparse Hamiltonian simulation
-- Qubitization experiments
-- Financial graph construction
-- Classical verification pipelines
+This repository goes beyond a textbook implementation of the HHL algorithm by developing and validating an end-to-end Quantum Linear System Algorithm (QLSA) pipeline for sparse graph-based problems.
 
-## Technologies
+Highlights include:
 
-- Python
-- Qiskit
-- NumPy
-- SciPy
+- **Complete QPE-based HHL workflow**, from sparse state preparation to quantum measurement.
+- **Berry–Childs quantum-walk block encoding** of sparse Hermitian matrices, including compiler-generated walk operators.
+- **Two distinct eigenvalue inversion architectures**, illustrating the trade-off between qubit count and circuit depth.
+- **Modular notebook design**, allowing each component of the algorithmic pipeline to be developed and validated independently.
+- **Sparse financial graph models** based on graph Laplacians and normalized graph diffusion operators.
+- **Rigorous engineering of sparse-oracle data structures**, including careful management of garbage-space orthogonality for Berry–Childs state preparation.
+- **Automatic precision analysis**, including principled selection of QPE precision qubits and Chebyshev approximation degree based on user-specified error thresholds.
+- **Fast Möbius Transform** implementation for efficiently computing Boolean monomial coefficients used in direct Chebyshev rotation synthesis (Variant 2).
+- **Extensive classical verification**, comparing intermediate and final quantum results against exact numerical linear algebra.
+- **Highly modular implementation**, making it straightforward to replace or extend individual algorithmic components.
+
+---
+
+# Repository Structure
+
+The repository is organized around **five primary notebooks**, supported by several smaller exploratory notebooks developed during the early stages of the project.
+
+```text
+                        Main Computational Pipeline
+
+                    Notebook C
+          Berry–Childs Block Encoding
+                     │
+                     │  produces W_eff_positive
+                     ▼
+              Notebook A (V1 / V2)
+      Complete HHL Circuit Construction
+                     │
+                     ▼
+              Notebook B (V1 / V2)
+     Execution, Validation & Verification
+```
+
+The responsibilities of the main notebooks are summarized below.
+
+| Notebook | Purpose |
+|----------|---------|
+| **Notebook C – Berry–Childs** | Constructs the Berry–Childs block encoding for the chosen sparse system matrix and generates the effective walk operator `W_eff_positive`, which is subsequently reused by the HHL notebooks. |
+| **Notebook A – Version 1** | Develops the complete HHL architecture using the "Compute, then Rotate" eigenvalue inversion strategy (Variant 1). |
+| **Notebook A – Version 2** | Develops the complete HHL architecture using the "Rotate while Computing" eigenvalue inversion strategy (Variant 2). |
+| **Notebook B – Version 1** | Executes and validates Variant 1 against the corresponding classical solution, including intermediate verification steps and fidelity analysis. |
+| **Notebook B – Version 2** | Executes and validates Variant 2 using the same validation framework, allowing direct comparison between the two architectures. |
+
+In addition to these primary notebooks, the repository also contains several supporting notebooks that document earlier exploratory work and prototype implementations. These notebooks are not required for running the main workflow but provide useful background on the evolution of the project.
+
+---
+
+# Execution Order
+
+The notebooks are intended to be executed in the following order.
+
+## Step 1 — Construct the Berry–Childs Walk Operator
+
+Run
+
+```text
+Notebook_C_Berry_Childs.ipynb
+```
+
+for the desired system matrix configuration (model, graph size, diffusion parameter, sparsity, minimum edge weight, etc.).
+
+This notebook constructs the complete Berry–Childs block encoding and generates the effective positive walk operator
+
+```text
+W_eff_positive
+```
+
+which serves as the Hamiltonian simulation primitive used by the HHL implementations.
+
+---
+
+## Step 2 — Transfer the Walk Operator
+
+After Notebook C finishes execution, copy the generated matrix
+
+```text
+W_eff_positive
+```
+
+into the definition of
+
+```text
+W_eff
+```
+
+in **Cell 43** of the desired Notebook B implementation (Version 1 or Version 2).
+
+It is important that **Notebook C and Notebook B use identical problem parameters**, including for example
+
+- graph model,
+- graph size,
+- diffusion model,
+- diffusion parameter `α`,
+- minimum edge weight `J_min`,
+- sparsity,
+- normalization strategy, and
+- any other parameters defining the system matrix `A`.
+
+Using inconsistent parameters will produce a walk operator that no longer corresponds to the matrix being solved.
+
+---
+
+## Step 3 — Execute the Desired HHL Variant
+
+Choose one of the two HHL architectures.
+
+### Variant 1
+
+```text
+Notebook_B_Version_1_HHL_Architecture_with_Validation.ipynb
+```
+
+Implements the **Compute, then Rotate** approach, where the polynomial approximation is first computed into an auxiliary register before preparing the HHL ancilla.
+
+---
+
+### Variant 2
+
+```text
+Notebook_B_Version_2_HHL_Architecture_with_Validation.ipynb
+```
+
+Implements the **Rotate while Computing** approach, where the polynomial evaluation and ancilla preparation are performed simultaneously using Boolean monomial synthesis and multi-controlled rotations.
+
+---
+
+## Step 4 — Validate the Solution
+
+Each validation notebook performs a complete comparison against the corresponding classical solution, including verification of intermediate quantities wherever possible.
+
+The validation workflow includes
+
+- construction of the classical reference solution,
+- comparison of predicted quantum amplitudes,
+- fidelity calculations,
+- probability analysis,
+- circuit visualization, and
+- consistency checks for the complete HHL pipeline.
+
+This modular workflow allows the Berry–Childs block encoding to be generated once and reused across multiple HHL implementations, making it straightforward to compare different eigenvalue inversion architectures while keeping the underlying Hamiltonian representation identical.
