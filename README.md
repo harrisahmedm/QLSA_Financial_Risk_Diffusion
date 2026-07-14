@@ -14,11 +14,13 @@ Many large-scale computational problems reduce to solving a sparse system of lin
 
 ```text
 Ax = b
-```,
+```
 
 where the matrix `A` is sparse, well-conditioned, and too large for conventional dense linear algebra techniques to remain practical. Quantum Linear System Algorithms aim to prepare a quantum state proportional to the solution vector,
 
-`A⁻¹|b⟩`.
+```text
+|x⟩ ∝ A⁻¹|b⟩
+```
 
 potentially offering asymptotic speedups under appropriate assumptions regarding sparsity, state preparation, and matrix simulation.
 
