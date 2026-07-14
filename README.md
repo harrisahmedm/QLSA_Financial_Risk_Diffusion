@@ -585,3 +585,11 @@ The implementation presented in this repository is based primarily on the follow
 7. **Zhou, Bousquet, Lal, Weston & Schölkopf (2004)**  
    *Learning with Local and Global Consistency*  
    *Advances in Neural Information Processing Systems (NeurIPS 2004).*
+   
+# Acknowledgements and Attribution
+
+The helper library `Our_Qiskit_Functions.py`, included in this repository, was originally provided by the teaching assistants as part of the course laboratory infrastructure.
+
+This library is used only by the supporting exploratory notebooks (`HHL_QPE_Toy.ipynb`, `HHL_QPE_Toy_Efficient.ipynb`, etc.) and is **not required** for the primary implementation notebooks (`Notebook_A_*`, `Notebook_B_*`, and `Notebook_C_Berry_Childs.ipynb`).
+
+One helper function from this library was adapted to support additional functionality required during the exploratory development of the project, while the remainder of the library is retained in its original form.
