@@ -382,3 +382,130 @@ Financial Risk Estimation
 Each stage of this pipeline is implemented as an independent module, allowing individual components to be tested, validated, and improved without affecting the remainder of the workflow.
 
 This modular organization also makes it straightforward to compare alternative implementations of the same algorithmic stage—for example, the two eigenvalue inversion architectures—while keeping the underlying Berry–Childs block encoding, state preparation, and validation framework unchanged.
+
+# Key Implementation Features
+
+Although the repository focuses on a single application—graph-based financial risk diffusion—it develops a number of reusable components that are broadly applicable to Quantum Linear System Algorithms.
+
+---
+
+## Berry–Childs Quantum-Walk Block Encoding
+
+The repository implements the Berry–Childs quantum-walk construction for block encoding sparse Hermitian matrices.
+
+The implementation includes
+
+- sparse position and value oracles,
+- Berry–Childs state preparation,
+- reflection about the image of the isometry,
+- quantum-walk operator synthesis,
+- compiler-generated local unitary construction, and
+- validation of the resulting effective walk operator.
+
+Particular care has been taken to ensure that the generated walk operator faithfully represents the underlying sparse matrix while remaining compatible with the subsequent Quantum Phase Estimation stage.
+
+---
+
+## Sparse-Oracle Engineering
+
+Constructing efficient sparse oracles is one of the most important practical aspects of scalable Hamiltonian simulation.
+
+This repository develops sparse-oracle representations that allow efficient access to
+
+- locations of non-zero matrix entries,
+- corresponding matrix values,
+- row normalization data, and
+- auxiliary information required during Berry–Childs state preparation.
+
+These oracle data structures are reused throughout the implementation, avoiding unnecessary recomputation.
+
+---
+
+## Orthogonality of Garbage and Failure States
+
+Berry–Childs state preparation introduces auxiliary states outside the desired signal space.
+
+The implementation carefully engineers these garbage and failure states so that they remain orthogonal to the computational subspace throughout the construction of the block encoding.
+
+Special attention is given to the allocation of failure basis indices and the prevention of unwanted interference between garbage states, ensuring that the resulting quantum walk satisfies the theoretical assumptions of the Berry–Childs construction.
+
+---
+
+## Two Independent Eigenvalue Inversion Architectures
+
+A central objective of this repository is to investigate two different strategies for implementing the HHL eigenvalue inversion stage.
+
+**Variant 1 — Compute, then Rotate**
+
+- reversible polynomial evaluation,
+- basis encoding of polynomial values,
+- controlled ancilla rotations, and
+- reversible uncomputation.
+
+This architecture uses more qubits but requires a comparatively simple rotation circuit.
+
+**Variant 2 — Rotate while Computing**
+
+- Chebyshev polynomial approximation,
+- Boolean monomial decomposition,
+- direct ancilla preparation, and
+- multi-controlled rotation synthesis.
+
+This architecture eliminates the polynomial register at the cost of a deeper quantum circuit.
+
+Implementing both variants within a common validation framework allows their resource requirements and numerical behaviour to be compared directly.
+
+---
+
+## Fast Möbius Transform for Boolean Basis Synthesis
+
+Variant 2 requires the polynomial approximation to be expressed in the Boolean monomial basis before it can be synthesized into parameterized quantum rotations.
+
+Rather than computing these coefficients directly—which becomes prohibitively expensive as the number of variables increases—the implementation employs the **Fast Möbius Transform** to efficiently compute the Boolean basis coefficients required for direct Chebyshev rotation synthesis.
+
+---
+
+## Automatic Precision Selection
+
+Several numerical parameters must be chosen carefully to achieve a desired solution accuracy.
+
+The repository includes systematic procedures for selecting
+
+- the number of Quantum Phase Estimation precision qubits,
+- spectral scaling constants,
+- Chebyshev approximation intervals,
+- polynomial approximation degree, and
+- numerical error tolerances.
+
+These quantities are derived from the spectral properties of the system matrix rather than being chosen heuristically.
+
+---
+
+## Modular Architecture
+
+The implementation is organized into independent modules corresponding to the major stages of the HHL algorithm.
+
+This separation allows individual components—including state preparation, block encoding, eigenvalue inversion, and validation—to be developed, tested, and replaced independently while maintaining a consistent interface between successive stages of the pipeline.
+
+---
+
+# Validation Methodology
+
+Every major component of the implementation is validated against an equivalent classical computation before being integrated into the complete HHL workflow.
+
+Rather than verifying only the final solution state, the repository performs intermediate consistency checks throughout the algorithm, making it easier to identify and isolate implementation errors.
+
+The validation framework includes
+
+- verification of sparse graph construction,
+- validation of state preparation circuits,
+- comparison of the Berry–Childs block encoding with the target matrix,
+- verification of Quantum Phase Estimation outputs,
+- comparison of eigenvalue inversion behaviour,
+- fidelity calculations between quantum and classical solution states,
+- probability comparisons for measured observables, and
+- consistency checks after inverse Quantum Phase Estimation and post-selection.
+
+Whenever practical, numerical quantities produced by the quantum circuit are compared against exact results obtained from classical linear algebra.
+
+This layered validation strategy substantially simplifies debugging while providing confidence that each stage of the implementation behaves as expected before being incorporated into the complete Quantum Linear System Algorithm.
