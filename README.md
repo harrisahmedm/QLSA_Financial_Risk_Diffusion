@@ -12,15 +12,13 @@ The implementation targets graph-based financial risk propagation as a represent
 
 Many large-scale computational problems reduce to solving a sparse system of linear equations
 
-\[
-A x = b,
-\]
+```text
+Ax = b,
+```
 
-where the matrix \(A\) is sparse, well-conditioned, and too large for conventional dense linear algebra techniques to remain practical. Quantum Linear System Algorithms aim to prepare a quantum state proportional to the solution vector,
+where the matrix `A` is sparse, well-conditioned, and too large for conventional dense linear algebra techniques to remain practical. Quantum Linear System Algorithms aim to prepare a quantum state proportional to the solution vector,
 
-\[
-|x\rangle \propto A^{-1}|b\rangle,
-\]
+`A⁻¹|b⟩`.
 
 potentially offering asymptotic speedups under appropriate assumptions regarding sparsity, state preparation, and matrix simulation.
 
